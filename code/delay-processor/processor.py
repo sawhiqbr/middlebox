@@ -45,7 +45,7 @@ class DelayProcessor:
             random_delay = random.uniform(DELAY_RANGE[0], DELAY_RANGE[1])
             delay_category = self.get_delay_category(random_delay)
             print(f"Adding delay of {random_delay:.3f} seconds (category: {delay_category:.3f})")
-            await asyncio.sleep(random_delay)
+            # await asyncio.sleep(random_delay)
             
             # Determine output topic based on input topic
             if msg.subject == 'inpktsec':
