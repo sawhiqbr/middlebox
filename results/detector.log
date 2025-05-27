@@ -1,0 +1,4 @@
+2025-05-27 22:18:50,443 - CovertDetector - INFO - Covert Channel Detector initialized
+2025-05-27 22:18:50,461 - CovertDetector - INFO - Connected to NATS at nats://admin:admin@nats:4222
+2025-05-27 22:18:50,461 - CovertDetector - INFO - Subscribed to input topics: inpktsec, inpktinsec
+2025-05-27 22:18:50,461 - CovertDetector - INFO - Covert Channel Detector is running...

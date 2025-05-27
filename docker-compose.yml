@@ -53,7 +53,22 @@ services:
     - INSECURENET_HOST_IP=${INSECURENET_HOST_IP}
     - NATS_SURVEYOR_SERVERS=${NATS_SURVEYOR_SERVERS}
 
-
+  detector-processor:
+    build: ./dockers/detector-processor
+    init: true
+    container_name: detector
+    networks:
+      - intnet
+    environment:
+      - NATS_SURVEYOR_SERVERS=${NATS_SURVEYOR_SERVERS}
+      - DETECTION_MODE=heuristic
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./code/detector:/code/detector
+      - ./results:/results
+    command: ['python', '/code/detector/detector.py']
+    depends_on:
+      - nats
 
   go-processor:
     build: ./dockers/go-processor
