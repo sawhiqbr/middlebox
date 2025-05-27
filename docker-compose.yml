@@ -63,12 +63,19 @@ services:
       - NATS_SURVEYOR_SERVERS=${NATS_SURVEYOR_SERVERS}
       - DETECTION_MODE=heuristic
       - LOG_LEVEL=INFO
+      - PYTHONPATH=/code/detector
     volumes:
       - ./code/detector:/code/detector
       - ./results:/results
     command: ['python', '/code/detector/detector.py']
     depends_on:
       - nats
+      - mitm
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import nats; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   go-processor:
     build: ./dockers/go-processor
