@@ -28,11 +28,11 @@ class AlertManager:
     }
 
     # Log alert
-    print(f"🚨 COVERT CHANNEL ALERT #{self.alert_count}")
-    print(f"   Score: {combined_score:.3f}")
-    print(f"   Packet: {alert['packet_info']['src']} -> {alert['packet_info']['dst']}")
-    print(f"   Flags: {alert['packet_info']['flags']}")
-    print(f"   Scores: {scores}")
+    print(f"COVERT CHANNEL ALERT #{self.alert_count}")
+    print(f"Score: {combined_score:.3f}")
+    print(f"Packet: {alert['packet_info']['src']} -> {alert['packet_info']['dst']}")
+    print(f"Flags: {alert['packet_info']['flags']}")
+    print(f"Scores: {scores}")
 
     # Save to file
     with open('/results/alerts.jsonl', 'a') as f:

@@ -1,0 +1,22 @@
+{
+  "tcp_flags_thresholds": {
+    "unusual_flag_ratio": 0.1,
+    "covert_flag_frequency": 5,
+    "session_timeout": 30
+  },
+  "pattern_thresholds": {
+    "min_pattern_length": 3,
+    "max_pattern_gap": 5.0,
+    "pattern_confidence": 0.8
+  },
+  "behavior_thresholds": {
+    "min_payload_ratio": 0.1,
+    "connection_completeness": 0.5,
+    "handshake_compliance": 0.7
+  },
+  "statistical_thresholds": {
+    "entropy_threshold": 2.5,
+    "deviation_multiplier": 2.0,
+    "min_samples": 10
+  }
+}

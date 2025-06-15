@@ -13,7 +13,7 @@ DETECTION_THRESHOLDS = {
     'pattern_detection': 0.8,       # Threshold for sequence patterns
     'behavior_analysis': 0.6,       # Threshold for protocol behavior
     'statistical_analysis': 0.5,    # Threshold for statistical anomalies
-    'combined_score': 0.65          # Final threshold for alert generation
+    'combined_score': 0.60          # Final threshold for alert generation
 }
 
 # Analysis Windows

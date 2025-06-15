@@ -116,24 +116,24 @@ services:
     - INSECURENET_HOST_IP=${INSECURENET_HOST_IP}
     - NATS_SURVEYOR_SERVERS=${NATS_SURVEYOR_SERVERS}
 
-  delay-processor:
-    build: ./dockers/delay-processor
-    init: true
-    container_name: delay-processor
-    networks:
-      intnet:
-    command: ['python', '/code/delay-processor/processor.py']
-    volumes:
-    - ./config:/config
-    - ./code/delay-processor:/code/delay-processor
-    environment:
-    - SECURE_NET=${SECURE_NET}
-    - SECURENET_GATEWAY=${SECURENET_GATEWAY}
-    - INSECURE_NET=${INSECURE_NET}
-    - INSECURENET_GATEWAY=${INSECURENET_GATEWAY}
-    - SECURENET_HOST_IP=${SECURENET_HOST_IP}
-    - INSECURENET_HOST_IP=${INSECURENET_HOST_IP}
-    - NATS_SURVEYOR_SERVERS=${NATS_SURVEYOR_SERVERS}
+  # delay-processor:
+  #   build: ./dockers/delay-processor
+  #   init: true
+  #   container_name: delay-processor
+  #   networks:
+  #     intnet:
+  #   command: ['python', '/code/delay-processor/processor.py']
+  #   volumes:
+  #   - ./config:/config
+  #   - ./code/delay-processor:/code/delay-processor
+  #   environment:
+  #   - SECURE_NET=${SECURE_NET}
+  #   - SECURENET_GATEWAY=${SECURENET_GATEWAY}
+  #   - INSECURE_NET=${INSECURE_NET}
+  #   - INSECURENET_GATEWAY=${INSECURENET_GATEWAY}
+  #   - SECURENET_HOST_IP=${SECURENET_HOST_IP}
+  #   - INSECURENET_HOST_IP=${INSECURENET_HOST_IP}
+  #   - NATS_SURVEYOR_SERVERS=${NATS_SURVEYOR_SERVERS}
 
   insec:
     build: ./dockers/insec
@@ -181,7 +181,7 @@ services:
     volumes:
       - ./nats/observations:/observations
       - ./nats/jetstream:/jetstream
-    command: --count ${NATS_SURVEYOR_SERVER_COUNT} -s "${NATS_SURVEYOR_SERVERS}" --accounts true --observe /observations --jetstream /jetstream    
+    command: --count ${NATS_SURVEYOR_SERVER_COUNT} -s "${NATS_SURVEYOR_SERVERS}" --accounts=true --observe /observations --jetstream /jetstream    
 #    command: --count ${NATS_SURVEYOR_SERVER_COUNT} --creds /etc/surveyor/SYS.creds -s "${NATS_SURVEYOR_SERVERS}" --accounts --observe /observations --jetstream /jetstream    
     networks:
       - intnet
