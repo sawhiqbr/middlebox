@@ -2,7 +2,6 @@
 Sequence Pattern Detection Module
 """
 from collections import deque, defaultdict
-from config.detection_config import ANALYSIS_WINDOWS
 
 
 class PatternDetector:

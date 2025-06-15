@@ -2,7 +2,6 @@
 TCP Flags Anomaly Detection Module
 """
 from collections import defaultdict, deque
-from config.detection_config import COVERT_FLAGS, NORMAL_FLAGS, DETECTION_THRESHOLDS
 
 
 class TCPFlagsAnalyzer:

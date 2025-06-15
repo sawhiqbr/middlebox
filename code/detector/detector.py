@@ -5,7 +5,11 @@ import os
 import asyncio
 import json
 import logging
+import time
+import random
+import matplotlib.pyplot as plt
 from datetime import datetime
+from collections import defaultdict
 import nats
 from scapy.all import Ether, IP, TCP
 
@@ -15,6 +19,11 @@ from pattern_detector import PatternDetector
 from behavior_analyzer import BehaviorAnalyzer
 from statistical_engine import StatisticalEngine
 from alert_manager import AlertManager
+
+# Delay Configuration
+DELAY_RANGE = (0, 0.1)  # Delay range in seconds
+MEASUREMENT_DURATION = 60  # Duration to collect measurements
+DELAY_CATEGORIES = [0.02, 0.04, 0.06, 0.08, 0.10]  # Fixed delay categories
 
 
 class CovertChannelDetector:
@@ -33,6 +42,11 @@ class CovertChannelDetector:
     self.alerts_generated = 0
     self.start_time = datetime.now()
 
+    # Delay processing statistics
+    self.rtt_measurements = defaultdict(list)
+    self.delay_measurements = defaultdict(list)
+    self.last_plot_time = time.time()
+
     self.logger.info("Covert Channel Detector initialized")
 
   def setup_logging(self):
@@ -49,6 +63,10 @@ class CovertChannelDetector:
     self.logger = logging.getLogger('CovertDetector')
     self.logger.info("Logging system initialized")
 
+  def get_delay_category(self, delay):
+    """Get the nearest delay category"""
+    return min(DELAY_CATEGORIES, key=lambda x: abs(x - delay))
+
   async def process_packet(self, msg):
     """Main packet processing pipeline"""
     try:
@@ -56,8 +74,8 @@ class CovertChannelDetector:
 
       # Log every packet received (first 20 packets for debugging)
       if self.packets_processed <= 20:
-        self.logger.info(f"📦 Received packet #{self.packets_processed} on topic: {msg.subject}")
-        self.logger.debug(f"   Raw data length: {len(msg.data)} bytes")
+        self.logger.info(f"Received packet #{self.packets_processed} on topic: {msg.subject}")
+        self.logger.debug(f"Raw data length: {len(msg.data)} bytes")
 
       # Parse Ethernet frame
       try:
@@ -65,52 +83,68 @@ class CovertChannelDetector:
         if self.packets_processed <= 5:
           self.logger.debug(f"   Ethernet type: 0x{eth_frame.type:04x}")
       except Exception as e:
-        self.logger.error(f"❌ Failed to parse Ethernet frame: {e}")
-        await self.forward_packet(msg)
+        self.logger.error(f"Failed to parse Ethernet frame: {e}")
+        await self.forward_packet_with_delay(msg, eth_frame)
         return
 
-      # Only process IPv4 TCP packets
+      # Generate random delay for this packet
+      random_delay = random.uniform(DELAY_RANGE[0], DELAY_RANGE[1])
+      delay_category = self.get_delay_category(random_delay)
+
+      if self.packets_processed <= 10:
+        self.logger.debug(f"Adding delay: {random_delay:.3f}s (category: {delay_category:.3f})")
+
+      # Record delay measurements
+      self.delay_measurements[delay_category].append(random_delay)
+
+      # Only process IPv4 TCP packets for detection
       if eth_frame.type != 0x0800:  # Not IPv4
         if self.packets_processed <= 5:
-          self.logger.debug(f"   ⏭️ Skipping non-IPv4 packet (type: 0x{eth_frame.type:04x})")
-        await self.forward_packet(msg)
+          self.logger.debug(f"Skipping non-IPv4 packet (type: 0x{eth_frame.type:04x})")
+        await self.forward_packet_with_delay(msg, eth_frame, random_delay)
         return
 
       try:
         ip_packet = eth_frame.payload
         if not isinstance(ip_packet, IP):
-          self.logger.debug(f"   ⏭️ Payload is not IP packet")
-          await self.forward_packet(msg)
+          self.logger.debug(f"Payload is not IP packet")
+          await self.forward_packet_with_delay(msg, eth_frame, random_delay)
           return
+
+        # Record RTT for ICMP (ping) packets
+        if ip_packet.proto == 1:  # ICMP
+          self.rtt_measurements[delay_category].append(random_delay * 2)
+          if self.packets_processed <= 10:
+            self.logger.debug(f"Recorded RTT measurement for category {delay_category:.3f}")
 
         if ip_packet.proto != 6:  # Not TCP
           if self.packets_processed <= 5:
-            self.logger.debug(f"   ⏭️ Skipping non-TCP packet (proto: {ip_packet.proto})")
-          await self.forward_packet(msg)
+            self.logger.debug(f"Skipping non-TCP packet (proto: {ip_packet.proto})")
+          await self.forward_packet_with_delay(msg, eth_frame, random_delay)
           return
       except Exception as e:
-        self.logger.error(f"❌ Failed to parse IP packet: {e}")
-        await self.forward_packet(msg)
+        self.logger.error(f"Failed to parse IP packet: {e}")
+        await self.forward_packet_with_delay(msg, eth_frame, random_delay)
         return
 
       try:
         tcp_packet = ip_packet.payload
         if not isinstance(tcp_packet, TCP):
-          self.logger.debug(f"   ⏭️ TCP payload parsing failed")
-          await self.forward_packet(msg)
+          self.logger.debug(f"TCP payload parsing failed")
+          await self.forward_packet_with_delay(msg, eth_frame, random_delay)
           return
       except Exception as e:
-        self.logger.error(f"❌ Failed to parse TCP packet: {e}")
-        await self.forward_packet(msg)
+        self.logger.error(f"Failed to parse TCP packet: {e}")
+        await self.forward_packet_with_delay(msg, eth_frame, random_delay)
         return
 
       # Log TCP packet details
       self.logger.info(
-          f"🔍 Processing TCP packet: {ip_packet.src}:{tcp_packet.sport} -> {ip_packet.dst}:{tcp_packet.dport}")
+          f"Processing TCP packet: {ip_packet.src}:{tcp_packet.sport} -> {ip_packet.dst}:{tcp_packet.dport}")
 
       # Extract TCP flags
       flags = self.extract_tcp_flags(tcp_packet)
-      self.logger.info(f"   🏁 TCP Flags: {flags}")
+      self.logger.info(f"TCP Flags: {flags}")
 
       # Extract packet metadata
       packet_info = {
@@ -121,43 +155,70 @@ class CovertChannelDetector:
           'dst_port': tcp_packet.dport,
           'flags': flags,
           'payload_size': len(tcp_packet.payload) if tcp_packet.payload else 0,
-          'direction': 'sec_to_insec' if msg.subject == 'inpktsec' else 'insec_to_sec'
+          'direction': 'sec_to_insec' if msg.subject == 'inpktsec' else 'insec_to_sec',
+          'delay_applied': random_delay,
+          'delay_category': delay_category
       }
 
       # Log packet analysis start
-      self.logger.debug(f"   📊 Starting detection analysis...")
+      self.logger.debug(f"Starting detection analysis...")
 
       # Run detection algorithms
       detection_scores = await self.run_detection_analysis(packet_info)
-      self.logger.debug(f"   🎯 Detection scores: {detection_scores}")
+      self.logger.debug(f"Detection scores: {detection_scores}")
 
       # Calculate combined score
       combined_score = self.calculate_combined_score(detection_scores)
-      self.logger.info(f"   ⚖️ Combined score: {combined_score:.3f}")
+      self.logger.info(f"Combined score: {combined_score:.3f}")
 
       # Check if alert should be generated
       threshold = DETECTION_THRESHOLDS['combined_score']
       if combined_score >= threshold:
         self.logger.warning(
-            f"🚨 ALERT TRIGGERED! Score {combined_score:.3f} >= threshold {threshold}")
+            f"ALERT TRIGGERED! Score {combined_score:.3f} >= threshold {threshold}")
         await self.generate_alert(packet_info, detection_scores, combined_score)
       else:
-        self.logger.debug(f"   ✅ No alert (score {combined_score:.3f} < {threshold})")
+        self.logger.debug(f"No alert (score {combined_score:.3f} < {threshold})")
 
-      # Forward the packet (detector works inline)
-      await self.forward_packet(msg)
-      self.logger.debug(f"   📤 Packet forwarded")
+      # Forward the packet with delay (detector works inline)
+      await self.forward_packet_with_delay(msg, eth_frame, random_delay)
+      self.logger.debug(f"Packet forwarded with {random_delay:.3f}s delay")
 
       # Log periodic statistics
-      if self.packets_processed % 10 == 0:  # More frequent for debugging
+      if self.packets_processed % 10 == 0:
         self.log_statistics()
 
     except Exception as e:
-      self.logger.error(f"❌ Error processing packet: {str(e)}")
+      self.logger.error(f"Error processing packet: {str(e)}")
       import traceback
-      self.logger.error(f"   Traceback: {traceback.format_exc()}")
+      self.logger.error(f"Traceback: {traceback.format_exc()}")
       # Still forward the packet even if detection fails
-      await self.forward_packet(msg)
+      await self.forward_packet_with_delay(msg, None, 0.0)
+
+  async def forward_packet_with_delay(self, msg, eth_frame=None, delay=0.0):
+    """Forward packet with random delay injection"""
+    try:
+      # Apply the delay
+      if delay > 0:
+        await asyncio.sleep(delay)
+
+      # Determine output topic
+      if msg.subject == 'inpktsec':
+        output_topic = 'outpktinsec'
+      else:
+        output_topic = 'outpktsec'
+
+      # Forward the packet
+      if eth_frame is not None:
+        await self.nc.publish(output_topic, bytes(eth_frame))
+      else:
+        await self.nc.publish(output_topic, msg.data)
+
+      if self.packets_processed <= 5:
+        self.logger.debug(f"Forwarded {msg.subject} -> {output_topic}")
+
+    except Exception as e:
+      self.logger.error(f"Failed to forward packet: {e}")
 
   def extract_tcp_flags(self, tcp_packet):
     """Extract TCP flags as string list"""
@@ -176,11 +237,11 @@ class CovertChannelDetector:
       if tcp_packet.flags.U:
         flags.append('U')  # URG
 
-      self.logger.debug(f"      Flag details: S={tcp_packet.flags.S}, A={tcp_packet.flags.A}, "
+      self.logger.debug(f"Flag details: S={tcp_packet.flags.S}, A={tcp_packet.flags.A}, "
                         f"F={tcp_packet.flags.F}, R={tcp_packet.flags.R}, "
                         f"P={tcp_packet.flags.P}, U={tcp_packet.flags.U}")
     except Exception as e:
-      self.logger.error(f"❌ Error extracting flags: {e}")
+      self.logger.error(f"Error extracting flags: {e}")
 
     return flags
 
@@ -190,27 +251,27 @@ class CovertChannelDetector:
 
     try:
       # TCP Flags Analysis
-      self.logger.debug("   🔍 Running TCP flags analysis...")
+      self.logger.debug("Running TCP flags analysis...")
       scores['tcp_flags'] = await self.tcp_flags_analyzer.analyze(packet_info)
-      self.logger.debug(f"      TCP flags score: {scores['tcp_flags']:.3f}")
+      self.logger.debug(f"TCP flags score: {scores['tcp_flags']:.3f}")
 
       # Pattern Detection
-      self.logger.debug("   🔍 Running pattern detection...")
+      self.logger.debug("Running pattern detection...")
       scores['pattern'] = await self.pattern_detector.analyze(packet_info)
-      self.logger.debug(f"      Pattern score: {scores['pattern']:.3f}")
+      self.logger.debug(f"Pattern score: {scores['pattern']:.3f}")
 
       # Behavior Analysis
-      self.logger.debug("   🔍 Running behavior analysis...")
+      self.logger.debug("Running behavior analysis...")
       scores['behavior'] = await self.behavior_analyzer.analyze(packet_info)
-      self.logger.debug(f"      Behavior score: {scores['behavior']:.3f}")
+      self.logger.debug(f"Behavior score: {scores['behavior']:.3f}")
 
       # Statistical Analysis
-      self.logger.debug("   🔍 Running statistical analysis...")
+      self.logger.debug("Running statistical analysis...")
       scores['statistical'] = await self.statistical_engine.analyze(packet_info)
-      self.logger.debug(f"      Statistical score: {scores['statistical']:.3f}")
+      self.logger.debug(f"Statistical score: {scores['statistical']:.3f}")
 
     except Exception as e:
-      self.logger.error(f"❌ Error in detection analysis: {e}")
+      self.logger.error(f"Error in detection analysis: {e}")
       # Set default scores if analysis fails
       scores = {'tcp_flags': 0.0, 'pattern': 0.0, 'behavior': 0.0, 'statistical': 0.0}
 
@@ -239,31 +300,76 @@ class CovertChannelDetector:
   async def generate_alert(self, packet_info, scores, combined_score):
     """Generate and publish detection alert"""
     self.alerts_generated += 1
-    self.logger.warning(f"🚨 GENERATING ALERT #{self.alerts_generated}")
+    self.logger.warning(f"GENERATING ALERT #{self.alerts_generated}")
     await self.alert_manager.generate_alert(packet_info, scores, combined_score)
 
-  async def forward_packet(self, msg):
-    """Forward packet to appropriate output topic"""
-    try:
-      if msg.subject == 'inpktsec':
-        output_topic = 'outpktinsec'
-      else:
-        output_topic = 'outpktsec'
+  async def plot_delay_results(self):
+    """Plot delay analysis results (from Phase 2)"""
+    if not self.delay_measurements:
+      self.logger.info("No delay measurements to plot yet")
+      return
 
-      await self.nc.publish(output_topic, msg.data)
+    # Calculate means for categories that have measurements
+    delays = []
+    mean_values = []
 
-      if self.packets_processed <= 5:
-        self.logger.debug(f"   📤 Forwarded {msg.subject} -> {output_topic}")
+    for delay in DELAY_CATEGORIES:
+      if delay in self.rtt_measurements and len(self.rtt_measurements[delay]) > 0:
+        delays.append(delay)
+        mean_values.append(sum(self.rtt_measurements[delay]) / len(self.rtt_measurements[delay]))
+      elif delay in self.delay_measurements and len(self.delay_measurements[delay]) > 0:
+        delays.append(delay)
+        # For delay measurements, use the actual delay values
+        mean_values.append(
+            sum(self.delay_measurements[delay]) / len(self.delay_measurements[delay]))
+        measurement_type = "Delay"
 
-    except Exception as e:
-      self.logger.error(f"❌ Failed to forward packet: {e}")
+    if not delays:
+      self.logger.info("No RTT measurements collected yet")
+      return
+
+    # Create plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(delays, mean_values, 'b-', marker='o')
+    plt.xlabel('Mean Random Delay (seconds)')
+    plt.ylabel(f'Average {measurement_type} (seconds)')
+    plt.title(f'{measurement_type} vs Random Delay Categories (Covert Channel Detector)')
+    plt.grid(True)
+    plt.savefig('/results/delay_analysis.png')
+    plt.close()
+
+    # Save data to JSON
+    with open('/results/delay_measurements.json', 'w') as f:
+      json.dump({
+          'delays': delays,
+          f'mean_{measurement_type.lower()}s': mean_values,
+          'detection_stats': {
+              'packets_processed': self.packets_processed,
+              'alerts_generated': self.alerts_generated
+          },
+          'raw_measurements': {
+              f"{d:.3f}": {
+                  'rtts': self.rtt_measurements[d],
+                  'delays': self.delay_measurements[d]
+              } for d in delays
+          }
+      }, f, indent=2)
+
+    self.logger.info(f"Delay analysis updated: {len(delays)} categories, "
+                     f"{sum(len(self.rtt_measurements.get(d, [])) for d in delays)} RTT measurements, "
+                     f"{sum(len(self.delay_measurements.get(d, [])) for d in delays)} delay measurements")
+
+    # Reset measurements for next period
+    self.rtt_measurements = defaultdict(list)
+    self.delay_measurements = defaultdict(list)
+    self.last_plot_time = time.time()
 
   def log_statistics(self):
     """Log periodic statistics"""
     uptime = (datetime.now() - self.start_time).total_seconds()
     rate = self.packets_processed/uptime if uptime > 0 else 0
     self.logger.info(
-        f"📊 Stats: {self.packets_processed} packets, "
+        f"Stats: {self.packets_processed} packets, "
         f"{self.alerts_generated} alerts, "
         f"{uptime:.1f}s uptime, "
         f"{rate:.2f} pkt/s"
@@ -290,20 +396,30 @@ class CovertChannelDetector:
       self.logger.info("Covert Channel Detector is running and ready!")
       self.logger.info("Waiting for packets...")
 
-      # Keep running
-      while True:
-        await asyncio.sleep(10)
-        # Heartbeat log every 10 seconds
-        if self.packets_processed == 0:
-          self.logger.info("Detector alive, waiting for packets...")
+      # Main loop
+      try:
+        while True:
+          await asyncio.sleep(10)
 
-    except KeyboardInterrupt:
-      self.logger.info("Detector stopping...")
+          if self.packets_processed == 0:
+            self.logger.info("Detector alive, waiting for packets...")
+
+          # Periodic delay analysis
+          # current_time = time.time()
+          # if current_time - self.last_plot_time >= MEASUREMENT_DURATION:
+          #   await self.plot_delay_results()
+
+      except KeyboardInterrupt:
+        self.logger.info("Detector stopping...")
+        # Plot final delay results
+        # await self.plot_delay_results()
+
     except Exception as e:
       self.logger.error(f"Detector error: {str(e)}")
       import traceback
       self.logger.error(f"Traceback: {traceback.format_exc()}")
     finally:
+      # await self.plot_delay_results()
       if hasattr(self, 'nc'):
         await self.nc.close()
         self.logger.info("NATS connection closed")

@@ -1,289 +1,371 @@
 """
-Testing framework for covert channel detection
+Enhanced Testing Framework for Phase 3 - Statistical Analysis
 """
 import asyncio
 import time
 import json
 import subprocess
 import threading
-from datetime import datetime
 import statistics
+import math
+from datetime import datetime
+import numpy as np
 
 
-class DetectionTestFramework:
+class Phase3TestFramework:
   def __init__(self):
     self.test_results = {}
-    self.current_test = None
+    self.detection_metrics = {}
+    self.statistical_results = {}
+    self._ensure_realistic_services()
 
-  def run_comprehensive_tests(self):
-    """Run all detection tests"""
-    print("Starting Comprehensive Detection Tests")
+  def _ensure_realistic_services(self):
+    """Start services that respond to connections"""
+    services = [
+        # HTTP server
+        (['python3', '-m', 'http.server', '80'], 'HTTP'),
+        # Simple TCP listener
+        (['nc', '-l', '-k', '-p', '22'], 'TCP')
+    ]
+
+    for cmd, name in services:
+      try:
+        subprocess.Popen([
+            'docker', 'exec', '-d', 'insec'] + cmd,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen([
+            'docker', 'exec', '-d', 'insec', 'python3', '-c',
+            'import socket; s=socket.socket(); s.bind(("", 443)); s.listen(5); [s.accept()[0].close() for _ in iter(lambda: s.accept(), None)]'
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        print(f"Started {name} service")
+      except Exception as e:
+        print(f"Could not start {name}: {e}")
+
+    time.sleep(1)  # Let services initialize
+
+  def run_experimentation_campaign(self):
+    """Run comprehensive experimentation campaign for Phase 3"""
+    print("Phase 3 Experimentation Campaign")
     print("=" * 50)
 
-    # Test 1: Basic Infrastructure
-    self.test_basic_infrastructure()
+    # Multiple test scenarios with statistical analysis
+    self.test_detection_accuracy_campaign()
+    self.generate_statistical_report()
 
-    # Test 2: Normal Traffic (should not alert)
-    self.test_normal_traffic()
+  def test_detection_accuracy_campaign(self):
+    """Enhanced testing with multiple scenarios"""
+    print("\nDetection Accuracy Campaign (50 runs)")
+    print("-" * 40)
 
-    # Test 3: Covert Channel Detection
-    self.test_covert_channel_detection()
+    num_runs = 50
+    covert_results = []
+    normal_results = []
 
-    # Test 4: Mixed Traffic
-    self.test_mixed_traffic()
+    for run in range(num_runs):
+      print(f"Run {run+1:2d}/{num_runs}...", end=" ", flush=True)
 
-    # Test 5: False Positive Rate
-    self.test_false_positive_rate()
+      # Vary test scenarios
+      scenario = run % 4  # 4 different scenarios
 
-    # Generate report
-    self.generate_test_report()
-
-  def test_basic_infrastructure(self):
-    """Test 1: Basic infrastructure connectivity"""
-    print("\nTest 1: Basic Infrastructure")
-    print("-" * 30)
-
-    try:
-      # Check if detector is running
-      result = subprocess.run(['docker', 'logs', 'detector', '--tail', '10'],
-                              capture_output=True, text=True, timeout=10)
-
-      if "Covert Channel Detector is running" in result.stdout:
-        print("Detector is running")
-        self.test_results['infrastructure'] = 'PASS'
+      if scenario == 0:
+        # Standard covert test
+        covert_detected = self._single_covert_test()
+      elif scenario == 1:
+        # Shorter covert message (might be missed)
+        covert_detected = self._single_covert_test_short()
+      elif scenario == 2:
+        # Covert with noise (TCP traffic mixed in)
+        covert_detected = self._single_covert_test_with_noise()
       else:
-        print("Detector not running properly")
-        self.test_results['infrastructure'] = 'FAIL'
-        return
+        covert_detected = self._single_covert_test_with_delay(0.05)
 
-      # Test basic ping connectivity
-      result = subprocess.run(['docker', 'exec', 'sec', 'ping', '-c', '3', 'insec'],
-                              capture_output=True, text=True, timeout=15)
+      print(f"Covert detected: {covert_detected}", end=", ", flush=True)
+      covert_results.append(covert_detected)
 
-      if result.returncode == 0:
-        print("Basic connectivity works")
+      # Vary normal traffic too
+      if run % 3 == 0:
+        normal_alerts = self._single_normal_test()  # Ping
+      elif run % 3 == 1:
+        normal_alerts = self._single_tcp_test()    # HTTP-like
       else:
-        print("Basic connectivity failed")
-        self.test_results['infrastructure'] = 'FAIL'
+        normal_alerts = self._single_mixed_test()  # Mixed protocols
 
-    except Exception as e:
-      print(f"Infrastructure test failed: {e}")
-      self.test_results['infrastructure'] = 'FAIL'
+      normal_results.append(normal_alerts == 0)
 
-  def test_normal_traffic(self):
-    """Test 2: Normal traffic should not trigger alerts"""
-    print("\n🚦 Test 2: Normal Traffic (No Alerts Expected)")
-    print("-" * 45)
+      print("Done.")
+      time.sleep(0.5)  # Shorter delay for 50 runs
 
-    self.current_test = 'normal_traffic'
+    # Calculate detection metrics
+    tp = sum(covert_results)  # True Positives
+    fn = num_runs - tp        # False Negatives
+    tn = sum(normal_results)  # True Negatives
+    fp = num_runs - tn        # False Positives
 
-    # Clear previous alerts
-    self._clear_alerts()
+    total_classifications = num_runs * 2  # Each run has covert + normal test
 
-    # Generate normal traffic
-    print("Generating normal traffic...")
-    try:
-      # ICMP ping
-      subprocess.run(['docker', 'exec', 'sec', 'ping', '-c', '10', 'insec'],
-                     timeout=20, capture_output=True)
+    self._calculate_detection_metrics(tp, tn, fp, fn, total_classifications)
 
-      # Normal TCP traffic (telnet attempt)
-      subprocess.run(['docker', 'exec', 'sec', 'timeout', '5', 'telnet', 'insec', '80'],
-                     timeout=10, capture_output=True)
-
-      time.sleep(3)  # Let detection process
-
-      # Check alerts
-      alert_count = self._count_alerts()
-      print(f"Alerts generated: {alert_count}")
-
-      if alert_count <= 2:  # Allow some tolerance
-        print("Normal traffic test passed")
-        self.test_results['normal_traffic'] = 'PASS'
-      else:
-        print("Too many false positives")
-        self.test_results['normal_traffic'] = 'FAIL'
-
-    except Exception as e:
-      print(f"Normal traffic test failed: {e}")
-      self.test_results['normal_traffic'] = 'FAIL'
-
-  def test_covert_channel_detection(self):
-    """Test 3: Covert channel should be detected"""
-    print("\nTest 3: Covert Channel Detection")
-    print("-" * 35)
-
-    self.current_test = 'covert_detection'
-
-    # Clear previous alerts
+  def _single_covert_test(self):
+    """Single covert channel test - returns True if detected"""
     self._clear_alerts()
 
     try:
-      # Start receiver in background
-      print("Starting covert channel receiver...")
+      # Start receiver
       receiver_proc = subprocess.Popen([
-          'docker', 'exec', 'insec', 'python3',
-          '/code/insec/covert/receiver.py', '10.1.0.21', '31337'
-      ])
+          'docker', 'exec', '-d', 'insec', 'python3',
+          '/code/insec/covert/receiver.py'
+      ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-      time.sleep(2)  # Let receiver start
+      time.sleep(1)
+
+      # Generate random short message
+      import random
+      import string
+
+      # Random length between 10-20 characters
+      length = random.randint(10, 20)
+
+      # Generate random string with letters and digits
+      message = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
       # Send covert message
-      print("Sending covert message...")
-      sender_result = subprocess.run([
+      subprocess.run([
           'docker', 'exec', 'sec', 'python3',
-          '/code/sec/covert/sender.py', '10.0.0.21', '31337', 'TEST', '0.1'
-      ], timeout=30, capture_output=True, text=True)
+          '/code/sec/covert/sender.py', message
+      ], timeout=15)
 
-      time.sleep(3)  # Let detection process
-
-      # Stop receiver
+      time.sleep(1)
       receiver_proc.terminate()
 
-      # Check alerts
+      # Check if detected
       alert_count = self._count_alerts()
       print(f"Alerts generated: {alert_count}")
+      return alert_count > 0
 
-      if alert_count >= 3:  # Should detect covert activity
-        print("Covert channel detected successfully")
-        self.test_results['covert_detection'] = 'PASS'
+    except Exception:
+      return False
 
-        # Analyze alert quality
-        self._analyze_alert_quality()
-      else:
-        print("Failed to detect covert channel")
-        self.test_results['covert_detection'] = 'FAIL'
-
-    except Exception as e:
-      print(f"Covert detection test failed: {e}")
-      self.test_results['covert_detection'] = 'FAIL'
-
-  def test_mixed_traffic(self):
-    """Test 4: Mixed normal and covert traffic"""
-    print("\nTest 4: Mixed Traffic Detection")
-    print("-" * 32)
-
-    self.current_test = 'mixed_traffic'
+  def _single_normal_test(self):
+    """Single normal traffic test - returns number of alerts"""
     self._clear_alerts()
 
     try:
-      # Start background normal traffic
-      print("Starting background normal traffic...")
-      ping_proc = subprocess.Popen([
-          'docker', 'exec', 'sec', 'ping', '-i', '2', 'insec'
-      ])
+      # Send normal traffic
+      subprocess.run([
+          'docker', 'exec', 'sec', 'ping', '-c', '5', 'insec'
+      ], timeout=10)
 
-      time.sleep(3)
+      time.sleep(1)
+      return self._count_alerts()
 
-      # Start covert channel
-      print("Starting covert channel in mixed environment...")
+    except Exception:
+      return 0
+
+  def _single_covert_test_short(self):
+    """Short covert message (might be harder to detect)"""
+    self._clear_alerts()
+
+    try:
       receiver_proc = subprocess.Popen([
-          'docker', 'exec', 'insec', 'python3',
-          '/code/insec/covert/receiver.py', '10.1.0.21', '31337'
-      ])
+          'docker', 'exec', '-d', 'insec', 'python3',
+          '/code/insec/covert/receiver.py'
+      ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-      time.sleep(2)
+      time.sleep(1)
+
+      # Generate random short message
+      import random
+      import string
+
+      # Random length between 1-4 characters
+      length = random.randint(1, 4)
+
+      # Generate random string with letters and digits
+      message = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+      # Send very short message (might not trigger pattern detection)
+      result = subprocess.run([
+          'docker', 'exec', 'sec', 'python3',
+          '/code/sec/covert/sender.py', message
+      ], timeout=15)
+
+      time.sleep(1)
+      subprocess.run(['docker', 'exec', 'insec', 'pkill', '-f', 'receiver'],)
+
+      alert_count = self._count_alerts()
+      print(f"Alerts generated: {alert_count}")
+      return alert_count > 0
+
+    except Exception:
+      return False
+
+  def _single_covert_test_with_noise(self):
+    """Covert channel with background TCP noise"""
+    self._clear_alerts()
+
+    try:
+      # Start receiver
+      receiver_proc = subprocess.Popen([
+          'docker', 'exec', '-d', 'insec', 'python3',
+          '/code/insec/covert/receiver.py'
+      ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+      # Generate background noise
+      noise_proc = subprocess.Popen([
+          'docker', 'exec', '-d', 'sec', 'nc', '-w', '1', 'insec', '80'
+      ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+      time.sleep(1)
+
+      # Generate random short message
+      import random
+      import string
+
+      # Random length between 10-20 characters
+      length = random.randint(10, 20)
+
+      # Generate random string with letters and digits
+      message = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
       # Send covert message
-      sender_result = subprocess.run([
+      result = subprocess.run([
           'docker', 'exec', 'sec', 'python3',
-          '/code/sec/covert/sender.py', '10.0.0.21', '31337', 'MIXED', '0.05'
-      ], timeout=20, capture_output=True)
+          '/code/sec/covert/sender.py', message
+      ], timeout=20)
 
-      time.sleep(3)
+      time.sleep(1)
 
-      # Stop processes
-      ping_proc.terminate()
-      receiver_proc.terminate()
+      # Cleanup
+      subprocess.run(['docker', 'exec', 'insec', 'pkill', '-f', 'receiver'],)
+      noise_proc.terminate()
 
-      # Analyze results
-      alert_count = self._count_alerts()
-      print(f"Alerts generated in mixed traffic: {alert_count}")
+      return self._count_alerts() > 0
 
-      if alert_count >= 2:  # Should still detect covert
-        print("Covert channel detected in mixed traffic")
-        self.test_results['mixed_traffic'] = 'PASS'
-      else:
-        print("Failed to detect covert in mixed traffic")
-        self.test_results['mixed_traffic'] = 'FAIL'
+    except Exception:
+      return False
 
-    except Exception as e:
-      print(f"Mixed traffic test failed: {e}")
-      self.test_results['mixed_traffic'] = 'FAIL'
-
-  def test_false_positive_rate(self):
-    """Test 5: Measure false positive rate with sustained normal traffic"""
-    print("\nTest 5: False Positive Rate Analysis")
-    print("-" * 38)
-
-    self.current_test = 'false_positive'
+  def _single_tcp_test(self):
+    """Normal TCP connection test"""
     self._clear_alerts()
 
     try:
-      print("Generating sustained normal traffic for 60 seconds...")
+      # Try to connect to port 80 (normal HTTP-like behavior)
+      subprocess.run([
+          'docker', 'exec', 'sec', 'nc', '-w', '2', 'insec', '80'
+      ], timeout=5)
 
-      # Multiple types of normal traffic
-      processes = []
+      time.sleep(1)
+      return self._count_alerts()
 
-      # Continuous ping
-      processes.append(subprocess.Popen([
-          'docker', 'exec', 'sec', 'ping', '-i', '1', 'insec'
-      ]))
+    except Exception:
+      return 0
 
-      # Occasional TCP connections
-      def generate_tcp_traffic():
-        for i in range(10):
-          try:
-            subprocess.run([
-                'docker', 'exec', 'sec', 'timeout', '2',
-                'nc', '-z', 'insec', str(80 + i)
-            ], timeout=5, capture_output=True)
-            time.sleep(5)
-          except:
-            pass
+  def _single_mixed_test(self):
+    """Mixed protocol normal traffic"""
+    self._clear_alerts()
 
-      tcp_thread = threading.Thread(target=generate_tcp_traffic)
-      tcp_thread.start()
+    try:
+      # Generate mixed traffic
+      subprocess.run([
+          'docker', 'exec', 'sec', 'ping', '-c', '2', 'insec'
+      ], timeout=5)
 
-      # Let it run
-      time.sleep(60)
+      subprocess.run([
+          'docker', 'exec', 'sec', 'nc', '-w', '1', 'insec', '443'
+      ], timeout=3)
 
-      # Stop all processes
-      for proc in processes:
-        proc.terminate()
+      time.sleep(1)
+      return self._count_alerts()
 
-      tcp_thread.join(timeout=5)
+    except Exception:
+      return 0
 
-      # Analyze false positives
+  def _single_covert_test_with_delay(self, delay):
+    """Covert test with specific delay"""
+    self._clear_alerts()
+
+    try:
+      receiver_proc = subprocess.Popen([
+          'docker', 'exec', '-d', 'insec', 'python3',
+          '/code/insec/covert/receiver.py'
+      ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+      time.sleep(1)
+
+      # Generate random short message
+      import random
+      import string
+
+      # Random length between 10-20 characters
+      length = random.randint(10, 20)
+
+      # Generate random string with letters and digits
+      message = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+      subprocess.run([
+          'docker', 'exec', 'sec', 'python3',
+          '/code/sec/covert/sender.py', message,
+          '--delay', str(delay)
+      ], timeout=30)
+
+      time.sleep(1)
+      receiver_proc.terminate()
+      print(f"Covert test with {delay}s delay completed. Checking alerts...")
       alert_count = self._count_alerts()
-      duration = 60
-      false_positive_rate = alert_count / duration
+      print(f"Alerts generated: {alert_count}")
+      return alert_count > 0
 
-      print(f"False positive rate: {false_positive_rate:.3f} alerts/second")
+    except Exception:
+      return False
 
-      if false_positive_rate < 0.1:  # Less than 0.1 alerts per second
-        print("Acceptable false positive rate")
-        self.test_results['false_positive'] = 'PASS'
-      else:
-        print("High false positive rate")
-        self.test_results['false_positive'] = 'FAIL'
+  def _calculate_detection_metrics(self, tp, tn, fp, fn, total_runs):
+    """Calculate comprehensive detection metrics"""
+    # Basic metrics
+    accuracy = (tp + tn) / total_runs if total_runs > 0 else 0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
 
-    except Exception as e:
-      print(f"False positive test failed: {e}")
-      self.test_results['false_positive'] = 'FAIL'
+    # F-Score metrics
+    f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    f2_score = 5 * (precision * recall) / (4 * precision +
+                                           recall) if (4 * precision + recall) > 0 else 0
+
+    # Store results
+    self.detection_metrics = {
+        'true_positives': tp,
+        'true_negatives': tn,
+        'false_positives': fp,
+        'false_negatives': fn,
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'specificity': specificity,
+        'f1_score': f1_score,
+        'f2_score': f2_score,
+        'total_runs': total_runs
+    }
+
+    print(f"\nDetection Metrics (n={total_runs}):")
+    print(f"  TP: {tp}, TN: {tn}, FP: {fp}, FN: {fn}")
+    print(f"  Accuracy:    {accuracy:.3f}")
+    print(f"  Precision:   {precision:.3f}")
+    print(f"  Recall:      {recall:.3f}")
+    print(f"  Specificity: {specificity:.3f}")
+    print(f"  F1-Score:    {f1_score:.3f}")
+    print(f"  F2-Score:    {f2_score:.3f}")
 
   def _clear_alerts(self):
-    """Clear previous alerts file"""
+    """Clear alerts file"""
     try:
-      subprocess.run(['docker', 'exec', 'detector', 'rm', '-f', '/results/alerts.jsonl'],
-                     capture_output=True)
-      subprocess.run(['docker', 'exec', 'detector', 'touch', '/results/alerts.jsonl'],
-                     capture_output=True)
+      subprocess.run(['docker', 'exec', 'detector', 'rm', '-f', '/results/alerts.jsonl'],)
+      subprocess.run(['docker', 'exec', 'detector', 'touch', '/results/alerts.jsonl'],)
     except:
       pass
 
   def _count_alerts(self):
-    """Count number of alerts generated"""
+    """Count generated alerts"""
     try:
       result = subprocess.run([
           'docker', 'exec', 'detector', 'wc', '-l', '/results/alerts.jsonl'
@@ -295,82 +377,96 @@ class DetectionTestFramework:
       pass
     return 0
 
-  def _analyze_alert_quality(self):
-    """Analyze the quality of generated alerts"""
-    try:
-      result = subprocess.run([
-          'docker', 'exec', 'detector', 'cat', '/results/alerts.jsonl'
-      ], capture_output=True, text=True, timeout=5)
+  def generate_statistical_report(self):
+    """Generate comprehensive statistical report"""
+    print("\n" + "=" * 60)
+    print("PHASE 3 STATISTICAL ANALYSIS REPORT")
+    print("=" * 60)
 
-      if result.returncode == 0 and result.stdout.strip():
-        alerts = []
-        for line in result.stdout.strip().split('\n'):
-          if line:
-            try:
-              alert = json.loads(line)
-              alerts.append(alert)
-            except:
-              continue
+    # Detection Performance Summary
+    if self.detection_metrics:
+      print("\nDETECTION PERFORMANCE METRICS")
+      print("-" * 35)
 
-        if alerts:
-          scores = [alert.get('combined_score', 0) for alert in alerts]
-          avg_score = statistics.mean(scores)
-          max_score = max(scores)
+      dm = self.detection_metrics
+      print(f"Sample Size: {dm['total_runs']} runs")
+      print("")
+      print("Confusion Matrix:")
+      print("                 Predicted")
+      print("              Covert  Normal")
+      print(f"Actual Covert   {dm['true_positives']:<3}     {dm['false_negatives']:<3}")
+      print(f"      Normal    {dm['false_positives']:<3}     {dm['true_negatives']:<3}")
+      print("")
+      print("Performance Metrics:")
+      print(
+          f"  Accuracy:  {dm['accuracy']:.3f} ± {self._calculate_ci(dm['accuracy'], dm['total_runs']):.3f}")
+      print(f"  Precision: {dm['precision']:.3f}")
+      print(f"  Recall:    {dm['recall']:.3f}")
+      print(f"  F1-Score:  {dm['f1_score']:.3f}")
+      print(f"  F2-Score:  {dm['f2_score']:.3f}")
 
-          print(f"  Alert quality - Avg score: {avg_score:.3f}, Max score: {max_score:.3f}")
+    # ROC Analysis
+    if 'roc_data' in self.statistical_results:
+      print("\nROC ANALYSIS")
+      print("-" * 15)
 
-          # Count alerts by flag type
-          flag_types = {}
-          for alert in alerts:
-            flags = alert.get('packet_info', {}).get('flags', [])
-            flag_key = ''.join(sorted(flags))
-            flag_types[flag_key] = flag_types.get(flag_key, 0) + 1
+      roc_data = self.statistical_results['roc_data']
+      print(f"{'Threshold':<10} {'TPR':<8} {'FPR':<8} {'Precision':<10}")
+      print("-" * 40)
 
-          print(f"  Flag combinations detected: {flag_types}")
+      for threshold, data in sorted(roc_data.items()):
+        tpr = data['tp_rate']
+        fpr = data['fp_rate']
+        precision = tpr / (tpr + fpr) if (tpr + fpr) > 0 else 0
+        print(f"{threshold:<10.1f} {tpr:<8.3f} {fpr:<8.3f} {precision:<10.3f}")
 
-    except Exception as e:
-      print(f"  Could not analyze alert quality: {e}")
+    # Delay Impact Analysis
+    if 'delay_impact' in self.statistical_results:
+      print("\nDELAY IMPACT ANALYSIS (95% Confidence Intervals)")
+      print("-" * 55)
 
-  def generate_test_report(self):
-    """Generate comprehensive test report"""
-    print("\n" + "=" * 50)
-    print("DETECTION SYSTEM TEST REPORT")
-    print("=" * 50)
+      delay_data = self.statistical_results['delay_impact']
+      print(f"{'Delay(s)':<10} {'Detection':<12} {'Capacity (bps)':<25} {'95% CI':<15}")
+      print("-" * 70)
 
-    total_tests = len(self.test_results)
-    passed_tests = sum(1 for result in self.test_results.values() if result == 'PASS')
+      for delay, data in sorted(delay_data.items()):
+        detection_rate = data['detection_rate']
+        mean_cap = data['mean_capacity']
+        ci_margin = data['ci_95_margin']
+        ci_lower = data['capacity_ci_lower']
+        ci_upper = data['capacity_ci_upper']
 
-    print(f"\nOverall Results: {passed_tests}/{total_tests} tests passed")
-    print(f"Success Rate: {(passed_tests/total_tests)*100:.1f}%\n")
+        print(
+            f"{delay:<10.3f} {detection_rate:<12.3f} {mean_cap:<8.1f} ± {ci_margin:<6.1f}      [{ci_lower:.1f}, {ci_upper:.1f}]")
 
-    for test_name, result in self.test_results.items():
-      print(f"{result} {test_name.replace('_', ' ').title()}: {result}")
+    # Save detailed results
+    self._save_results_to_file()
 
-    # Recommendations
-    print("\nRecommendations:")
+    print(
+        f"\nExperimentation campaign completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("Detailed results saved to phase3_results.json")
 
-    if self.test_results.get('infrastructure') == 'FAIL':
-      print("- Fix basic infrastructure connectivity")
+  def _calculate_ci(self, proportion, n, confidence=0.95):
+    """Calculate confidence interval for proportion"""
+    if n == 0:
+      return 0
+    z_score = 1.96  # For 95% confidence
+    se = math.sqrt((proportion * (1 - proportion)) / n)
+    return z_score * se
 
-    if self.test_results.get('normal_traffic') == 'FAIL':
-      print("- Tune detection thresholds to reduce false positives")
+  def _save_results_to_file(self):
+    """Save all results to JSON file"""
+    results = {
+        'detection_metrics': self.detection_metrics,
+        'statistical_results': self.statistical_results,
+        'timestamp': datetime.now().isoformat(),
+        'experiment_type': 'phase3_detection_analysis'
+    }
 
-    if self.test_results.get('covert_detection') == 'FAIL':
-      print("- Improve detection algorithms sensitivity")
-      print("- Check TCP flags analysis logic")
-
-    if self.test_results.get('mixed_traffic') == 'FAIL':
-      print("- Enhance detection robustness in noisy environments")
-
-    if self.test_results.get('false_positive') == 'FAIL':
-      print("- Reduce false positive rate by improving baselines")
-
-    if passed_tests == total_tests:
-      print("All tests passed! Detection system is working well.")
-
-    print(f"\nTest completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    with open('phase3_results.json', 'w') as f:
+      json.dump(results, f, indent=2)
 
 
 if __name__ == "__main__":
-  tester = DetectionTestFramework()
-  tester.run_comprehensive_tests()
+  framework = Phase3TestFramework()
+  framework.run_experimentation_campaign()

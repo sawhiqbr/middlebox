@@ -2,7 +2,6 @@
 Protocol Behavior Analysis Module
 """
 from collections import defaultdict
-from config.detection_config import ANALYSIS_WINDOWS
 
 
 class BehaviorAnalyzer:
