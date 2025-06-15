@@ -1,5 +1,5 @@
 """
-Enhanced Testing Framework for Phase 3 - Statistical Analysis
+Combined Testing Framework for phase 3 and 4 - Statistical Analysis
 """
 import asyncio
 import time
@@ -12,11 +12,12 @@ from datetime import datetime
 import numpy as np
 
 
-class Phase3TestFramework:
+class TestFramework:
   def __init__(self):
     self.test_results = {}
     self.detection_metrics = {}
     self.statistical_results = {}
+    self.mitigation_metrics = {}
     self._ensure_realistic_services()
 
   def _ensure_realistic_services(self):
@@ -369,7 +370,7 @@ class Phase3TestFramework:
     try:
       result = subprocess.run([
           'docker', 'exec', 'detector', 'wc', '-l', '/results/alerts.jsonl'
-      ], capture_output=True, text=True, timeout=5)
+      ], text=True, timeout=5)
 
       if result.returncode == 0:
         return int(result.stdout.strip().split()[0])
@@ -466,7 +467,349 @@ class Phase3TestFramework:
     with open('phase3_results.json', 'w') as f:
       json.dump(results, f, indent=2)
 
+  ### MITIGATION TESTING METHODS ###
+  def run_mitigation_campaign(self):
+    """Run comprehensive mitigation testing campaign"""
+    print("Phase 4 Mitigation Testing Campaign")
+    print("=" * 50)
+
+    # Test different aspects of mitigation
+    self.test_capacity_reduction()
+    self.test_threshold_effectiveness()
+    self.test_normal_traffic_impact()
+    self.generate_mitigation_report()
+
+  def test_capacity_reduction(self):
+    """Test covert channel capacity with and without mitigation"""
+    print("\nCovert Channel Capacity Reduction Test")
+    print("-" * 45)
+
+    # Test WITHOUT mitigation
+    print("Testing baseline capacity (no mitigation)...")
+    self._disable_mitigation()
+    baseline_capacity = self._measure_covert_capacity_multiple_runs(5)
+
+    # Test WITH mitigation
+    print("Testing capacity with mitigation...")
+    self._enable_mitigation()
+    mitigated_capacity = self._measure_covert_capacity_multiple_runs(5)
+
+    # Calculate effectiveness
+    if baseline_capacity['mean'] > 0:
+      reduction_percent = ((baseline_capacity['mean'] - mitigated_capacity['mean']) /
+                           baseline_capacity['mean']) * 100
+    else:
+      reduction_percent = 0
+
+    self.mitigation_metrics['capacity_reduction'] = {
+        'baseline': baseline_capacity,
+        'mitigated': mitigated_capacity,
+        'reduction_percent': reduction_percent
+    }
+
+    print(f"\nCapacity Results:")
+    print(
+        f"  Baseline: {baseline_capacity['mean']:.2f} ± {baseline_capacity['ci_95']:.2f} bits/sec")
+    print(
+        f"  Mitigated: {mitigated_capacity['mean']:.2f} ± {mitigated_capacity['ci_95']:.2f} bits/sec")
+    print(f"  Reduction: {reduction_percent:.1f}%")
+
+  def test_threshold_effectiveness(self):
+    """Test effectiveness of different mitigation thresholds"""
+    print("\nMitigation Threshold Effectiveness Test")
+    print("-" * 42)
+
+    thresholds = [0.50, 0.55, 0.60, 0.70]
+    threshold_results = {}
+
+    for threshold in thresholds:
+      print(f"Testing threshold {threshold}...")
+
+      # Set mitigation threshold
+      self._set_mitigation_threshold(threshold)
+      time.sleep(2)  # Let detector reload
+
+      # Measure capacity and normal traffic impact
+      capacity = self._measure_covert_capacity_multiple_runs(5)
+      normal_impact = self._measure_normal_traffic_impact(5)
+
+      threshold_results[threshold] = {
+          'covert_capacity': capacity,
+          'normal_latency_impact': normal_impact
+      }
+
+      print(
+          f"  Capacity: {capacity['mean']:.2f} bits/sec, Normal impact: +{normal_impact['mean']:.1f}ms")
+
+    self.mitigation_metrics['threshold_analysis'] = threshold_results
+
+  def test_normal_traffic_impact(self):
+    """Test impact on legitimate network traffic"""
+    print("\n Normal Traffic Impact Assessment")
+    print("-" * 35)
+
+    # Test normal traffic without mitigation
+    self._disable_mitigation()
+    baseline_latency = self._measure_normal_traffic_latency(5)
+
+    # Test normal traffic with mitigation
+    self._enable_mitigation()
+    mitigated_latency = self._measure_normal_traffic_latency(5)
+
+    impact = {
+        'baseline_latency': baseline_latency,
+        'mitigated_latency': mitigated_latency,
+        'added_latency': mitigated_latency['mean'] - baseline_latency['mean']
+    }
+
+    self.mitigation_metrics['traffic_impact'] = impact
+
+    print(
+        f"  Baseline latency: {baseline_latency['mean']:.1f} ± {baseline_latency['ci_95']:.1f} ms")
+    print(
+        f"  With mitigation: {mitigated_latency['mean']:.1f} ± {mitigated_latency['ci_95']:.1f} ms")
+    print(f"  Added latency: {impact['added_latency']:.1f} ms")
+
+  def _measure_covert_capacity_multiple_runs(self, num_runs):
+    """Measure covert channel capacity over multiple runs"""
+    capacities = []
+
+    for i in range(num_runs):
+      print(f"    Run {i+1}/{num_runs}...", end=" ")
+      capacity = self._single_capacity_measurement()
+      capacities.append(capacity)
+      print(f"{capacity:.2f} bits/sec")
+      time.sleep(1)
+
+    return self._calculate_statistics(capacities)
+
+  def _single_capacity_measurement(self):
+    """Single covert channel capacity measurement"""
+    self._clear_alerts()
+
+    try:
+      # Start receiver
+      receiver_proc = subprocess.Popen([
+          'docker', 'exec', '-d', 'insec', 'python3',
+          '/code/insec/covert/receiver.py'
+      ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+      time.sleep(1)
+
+      # Generate random message
+      import random
+      import string
+
+      # Random length between 10-20 characters
+      length = random.randint(10, 20)
+
+      # Generate random string with letters and digits
+      message = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+      # Measure transmission time
+      start_time = time.time()
+
+      # Send covert message
+      result = subprocess.run([
+          'docker', 'exec', 'sec', 'python3',
+          '/code/sec/covert/sender.py', message
+      ], timeout=30)
+
+      end_time = time.time()
+      duration = end_time - start_time
+
+      time.sleep(1)
+
+      # Check if message was successfully transmitted
+      alerts = self._count_alerts()
+      if alerts > 0:
+        # Message detected (and possibly dropped)
+        successful_bits = 0  # Assume completely blocked
+      else:
+        # Message not detected, assume full transmission
+        successful_bits = len(message) * 8
+
+      # Kill receiver
+      subprocess.run(['docker', 'exec', 'insec', 'pkill', '-f', 'receiver'])
+
+      # Calculate capacity
+      if duration > 0:
+        capacity = successful_bits / duration
+      else:
+        capacity = 0
+
+      return capacity
+
+    except Exception as e:
+      print(f"Error measuring capacity: {e}")
+      return 0
+
+  def _measure_normal_traffic_latency(self, num_runs):
+    """Measure normal traffic latency"""
+    latencies = []
+
+    for i in range(num_runs):
+      try:
+        start_time = time.time()
+
+        # Send ping
+        result = subprocess.run([
+            'docker', 'exec', 'sec', 'ping', '-c', '1', '-W', '5', 'insec'
+        ], timeout=8, capture_output=True, text=True)
+
+        end_time = time.time()
+
+        # Extract ping time from output
+        if result.returncode == 0 and 'time=' in result.stdout:
+          # Find the line with time= in it
+          for line in result.stdout.split('\n'):
+            if 'time=' in line:
+              # Extract time value - handle different formats
+              try:
+                # Look for pattern like "time=81.5 ms"
+                time_part = line.split('time=')[1]
+                ping_time = float(time_part.split(' ms')[0])
+                latencies.append(ping_time)
+                print(f"Parsed ping time: {ping_time}ms")
+                break
+              except (IndexError, ValueError) as e:
+                print(f"Failed to parse ping time from line: {line}, error: {e}")
+                latencies.append(100)  # Default reasonable value
+                break
+          else:
+            # No time= line found
+            print("No time= line found in ping output")
+            latencies.append(100)
+        else:
+          print(f"Ping failed with return code: {result.returncode}")
+          latencies.append(500)  # Ping failed
+
+        time.sleep(0.5)
+
+      except Exception:
+        latencies.append(1000)  # Assume 1s timeout
+
+    return self._calculate_statistics(latencies)
+
+  def _measure_normal_traffic_impact(self, num_runs):
+    """Measure impact on normal traffic (simplified)"""
+    # For simplicity, just measure ping latency
+    return self._measure_normal_traffic_latency(num_runs)
+
+  def _calculate_statistics(self, values):
+    """Calculate mean, std, and 95% CI"""
+    if not values:
+      return {'mean': 0, 'std': 0, 'ci_95': 0}
+
+    mean_val = statistics.mean(values)
+
+    if len(values) > 1:
+      std_val = statistics.stdev(values)
+      ci_95 = 1.96 * (std_val / math.sqrt(len(values)))
+    else:
+      std_val = 0
+      ci_95 = 0
+
+    return {
+        'mean': mean_val,
+        'std': std_val,
+        'ci_95': ci_95,
+        'values': values
+    }
+
+  def _disable_mitigation(self):
+    """Disable mitigation"""
+    try:
+      subprocess.run([
+          'docker', 'exec', 'detector', 'sed', '-i',
+          's/MITIGATION_ENABLED = True/MITIGATION_ENABLED = False/g',
+          '/code/detector/config/detection_config.py'
+      ], check=True)
+
+      subprocess.run(['docker', 'compose', 'restart', 'detector-processor'], check=True)
+      time.sleep(10)
+      print("Mitigation disabled")
+    except Exception as e:
+      print(f"Failed to disable mitigation: {e}")
+
+  def _enable_mitigation(self):
+    """Enable mitigation"""
+    try:
+      subprocess.run([
+          'docker', 'exec', 'detector', 'sed', '-i',
+          's/MITIGATION_ENABLED = False/MITIGATION_ENABLED = True/g',
+          '/code/detector/config/detection_config.py'
+      ], check=True)
+
+      subprocess.run(['docker', 'compose', 'restart', 'detector-processor'], check=True)
+      time.sleep(10)
+      print("Mitigation enabled")
+    except Exception as e:
+      print(f"Failed to enable mitigation: {e}")
+
+  def _set_mitigation_threshold(self, threshold):
+    """Set mitigation threshold"""
+    try:
+      subprocess.run([
+          'docker', 'exec', 'detector', 'sed', '-i',
+          f"s/'mitigation_score': [0-9.]*/'mitigation_score': {threshold}/g",
+          '/code/detector/config/detection_config.py'
+      ], check=True)
+
+      subprocess.run(['docker', 'compose', 'restart', 'detector-processor'], check=True)
+      time.sleep(10)
+    except Exception as e:
+      print(f"Failed to set threshold: {e}")
+
+  def generate_mitigation_report(self):
+    """Generate comprehensive mitigation report"""
+    print("\n" + "=" * 60)
+    print("PHASE 4 MITIGATION EFFECTIVENESS REPORT")
+    print("=" * 60)
+
+    # Capacity Reduction Analysis
+    if 'capacity_reduction' in self.mitigation_metrics:
+      cr = self.mitigation_metrics['capacity_reduction']
+      print(f"\nCOVERT CHANNEL CAPACITY ANALYSIS")
+      print("-" * 35)
+      print(
+          f"Baseline Capacity:  {cr['baseline']['mean']:.2f} ± {cr['baseline']['ci_95']:.2f} bits/sec")
+      print(
+          f"Mitigated Capacity: {cr['mitigated']['mean']:.2f} ± {cr['mitigated']['ci_95']:.2f} bits/sec")
+      print(f"Reduction Rate:     {cr['reduction_percent']:.1f}%")
+
+    # Threshold Analysis
+    if 'threshold_analysis' in self.mitigation_metrics:
+      print(f"\nTHRESHOLD EFFECTIVENESS ANALYSIS")
+      print("-" * 35)
+      ta = self.mitigation_metrics['threshold_analysis']
+      print(f"{'Threshold':<10} {'Capacity (bps)':<15} {'Normal Impact (ms)':<20}")
+      print("-" * 50)
+
+      for threshold, data in sorted(ta.items()):
+        capacity = data['covert_capacity']['mean']
+        impact = data['normal_latency_impact']['mean']
+        print(f"{threshold:<10.2f} {capacity:<15.2f} {impact:<20.1f}")
+
+    # Save detailed results with timestamp
+    results = {
+        'mitigation_metrics': self.mitigation_metrics,
+        'performance_summary': {
+            'capacity_reduction_percent': self.mitigation_metrics.get('capacity_reduction', {}).get('reduction_percent', 0),
+            'normal_traffic_impact_ms': self.mitigation_metrics.get('traffic_impact', {}).get('added_latency', 0)
+        },
+        'timestamp': datetime.now().isoformat(),
+        'experiment_type': 'phase4_mitigation_analysis'
+    }
+
+    with open('phase4_mitigation_results.json', 'w') as f:
+      json.dump(results, f, indent=2)
+
+    print(f"\nResults saved to phase4_mitigation_results.json")
+    print(f"Campaign completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 if __name__ == "__main__":
-  framework = Phase3TestFramework()
-  framework.run_experimentation_campaign()
+  framework = TestFramework()
+  # framework.run_experimentation_campaign()
+  framework.run_mitigation_campaign()

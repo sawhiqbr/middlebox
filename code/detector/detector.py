@@ -180,6 +180,12 @@ class CovertChannelDetector:
       else:
         self.logger.debug(f"No alert (score {combined_score:.3f} < {threshold})")
 
+      MITIGATION_THRESHOLD = DETECTION_THRESHOLDS['mitigation_score']
+      if combined_score > MITIGATION_THRESHOLD and MITIGATION_ENABLED:
+        self.logger.warning(
+            f"DROPPING packet - Score: {combined_score:.3f} > {MITIGATION_THRESHOLD}")
+        return  # Drop packet
+
       # Forward the packet with delay (detector works inline)
       await self.forward_packet_with_delay(msg, eth_frame, random_delay)
       self.logger.debug(f"Packet forwarded with {random_delay:.3f}s delay")
@@ -374,6 +380,13 @@ class CovertChannelDetector:
         f"{uptime:.1f}s uptime, "
         f"{rate:.2f} pkt/s"
     )
+
+  def should_drop_packet(self, packet_info):
+    """Simple mitigation: drop covert packets"""
+    if (packet_info.get('dst_port') == 31337 and
+            packet_info.get('flags') in [['S', 'A'], ['U', 'A'], ['P', 'A'], ['F', 'A']]):
+      return True
+    return False
 
   async def main(self):
     """Main detector loop"""
