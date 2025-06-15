@@ -10,6 +10,8 @@ import statistics
 import math
 from datetime import datetime
 import numpy as np
+import argparse
+import sys
 
 
 class TestFramework:
@@ -809,7 +811,57 @@ class TestFramework:
     print(f"Campaign completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-if __name__ == "__main__":
+def parse_arguments():
+  """Parse command line arguments"""
+  parser = argparse.ArgumentParser(
+      description='Testing Framework for Phase 3 and Phase 4',
+      formatter_class=argparse.RawDescriptionHelpFormatter,
+      epilog="""
+Examples:
+  python3 test_framework.py --phase phase3     # Run Phase 3 detection testing
+  python3 test_framework.py --phase phase4     # Run Phase 4 mitigation testing
+        """
+  )
+
+  parser.add_argument(
+      '--phase',
+      required=True,
+      choices=['phase3', 'phase4'],
+      help='Which phase to run: phase3 (detection testing) or phase4 (mitigation testing)'
+  )
+
+  return parser.parse_args()
+
+
+def main():
+  """Main function with argument parsing"""
+  args = parse_arguments()
+
+  print(f"Starting {args.phase.upper()} Testing Framework")
+  print(f"Phase: {args.phase}")
+  print("=" * 60)
+
+  # Initialize framework
   framework = TestFramework()
-  # framework.run_experimentation_campaign()
-  framework.run_mitigation_campaign()
+
+  try:
+    if args.phase == 'phase3':
+      print("Running Phase 3: Detection Analysis Campaign")
+      framework.run_experimentation_campaign()
+
+    elif args.phase == 'phase4':
+      print("Running Phase 4: Mitigation Effectiveness Campaign")
+      framework.run_mitigation_campaign()
+
+  except KeyboardInterrupt:
+    print("\nTesting interrupted by user")
+    sys.exit(1)
+  except Exception as e:
+    print(f"\nError during testing: {e}")
+    sys.exit(1)
+
+  print(f"\n{args.phase.upper()} testing completed successfully!")
+
+
+if __name__ == "__main__":
+  main()
